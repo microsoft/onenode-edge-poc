@@ -1,0 +1,44 @@
+#-- Jumpstart Scenarios --#
+deployArcDataServices   =   true
+deploySQLMI             =   true
+deployPostgreSQL        =   false
+deployAppService        =   false
+deployFunction          =   false
+deployApiMgmt           =   false
+deployLogicApp          =   false
+
+#-- Host variables --#
+adminUsername           =   Administrator
+adminPassword           =   Microsoft#1
+nodeName                =   0neNode
+
+#-- Azure variables --#
+spnDisplayName          =   0neNodeSpn
+resourceGroup           =   0neNodeRg
+subscriptionId          =   03d13178-3e31-454d-9bdd-9e93bc53828a
+azureLocation           =   eastus
+workspaceName           =   0neNodeLogs
+
+#-- HCI variables --#
+hciClusterName          =   0neNodeClu
+hciClusterIp            =   172.16.99.1
+hciArcServersRg         =   0neNodeArcRg
+
+#-- AKS variables --#
+aksNodeIpPoolStart      =   172.16.99.10
+aksNodeIpPoolEnd        =   172.16.99.30
+aksVipPoolStart         =   172.16.99.100
+aksVipPoolEnd           =   172.16.99.120
+aksCloudAgentIp         =   172.16.99.2
+aksCloudAgentName       =   akshcimgmt
+aksWorkloadCluster      =   aks-workload-cluster
+aksWorkerNodeVmSize     =   Standard_A4_v2
+
+#-- Arc Data Services variables --#
+arcDsExtName            =   arcdataservices
+arcDsNamespace          =   arcds
+AZDATA_USERNAME         =   admin
+AZDATA_PASSWORD         =   Microsoft#1
+ACCEPT_EULA             =   true
+
+#-- Auto Generated variables --#
