@@ -3,6 +3,7 @@ AzBootstrap = Pending
 CreateArcBoxSpn = Pending
 InstallAzModules = Pending
 InstallAzCli = Pending
+InstallWAC = Pending
 AssignSpnRoles = Pending
 RegisterHybridProviders = Pending
 CreateResourceGroup = Pending

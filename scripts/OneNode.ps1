@@ -216,17 +216,16 @@ function InstallWAC
 {
     # Save to same directory as the script
     $azCliUri = "https://aka.ms/wacdownload"
-    $azCliPackage = "./azure-cli.msi"
+    $azCliPackage = "./wac.msi"
 
     # Use BITS to transfer file, for speed and reliability
     Import-Module -Name 'BitsTransfer'
     Start-BitsTransfer -Source $azCliUri -Destination $azCliPackage
 
     # Run the installer non-interactively, but show progress. Feels nice to see progress, right? 
-    Start-Process msiexec.exe -Wait -ArgumentList '/I azure-cli.msi /passive'
+    Start-Process msiexec.exe -Wait -ArgumentList '/I wac.msi /passive SME_PORT=443 SSL_CERTIFICATE_OPTION=generate'
 
-    # Make sure the CLI and AKSHCI locations are in the %PATH% because later commands depend on it
-    Set-Env -Name Path -Value "$env:Path;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\Program Files\AksHci"
+    New-NetFirewallRule -DisplayName "SME" -Direction 'inbound' -Profile 'Any' -Action 'Allow' -LocalPort 80 -Protocol 'TCP'
 
     Update-Progress
 }
