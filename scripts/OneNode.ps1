@@ -1,9 +1,13 @@
 [CmdletBinding()] param (
     [Parameter()]
-    [String]$ConfigFile='./config.txt',
-    [Switch]$ResetCluster
+    [String]$ConfigFile='./config.txt'
 )
 <#---------------------------------------------------------------------------------------------------------------#>
+<# 
+    Helper function. The re-startability of this script, and the ability to use data here in other Arc Jumpstart
+    scenarios depends on storing critical variable data in environment variables. This updates the current session
+    as well as the permanent registry values at once.
+#>
 function Set-Env 
 {
     param (
@@ -14,6 +18,10 @@ function Set-Env
     [Environment]::SetEnvironmentVariable($name, $value)
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Helper function. Call only after all other critical steps in an execution stage are done. Updates the
+    progress.log file to show current stage is completed.
+#>
 Function Update-Progress 
 {
     $progressLog[$currentStepIndex] = "$currentStepName = Completed"
@@ -24,6 +32,10 @@ Function Update-Progress
 
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Helper function. Adds important dynamically generated info to the end of the config.txt file. Values like
+    SPN information, access keys, and IP address info get stored for later use.
+#>
 function Update-ScriptConfig
 {
     param 
@@ -36,6 +48,11 @@ function Update-ScriptConfig
     Out-File -FilePath $ConfigFile -Append -Encoding 'utf8' -InputObject $varFileOutput
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Helper function. Called at the very beginning of each execution. Creates new variables from values in
+    config.txt. Allows user to edit the values during execution if there is a problem. Overwrites previously
+    stored values from earlier executions.
+#>
 function Initialize-Variables 
 {
     # Load our settings into variable from config.txt.  There is no parameter validation currently.
@@ -65,17 +82,12 @@ function Initialize-Variables
     $ErrorActionPreference = $errPref
 }
 <#---------------------------------------------------------------------------------------------------------------#>
-function Connect-ArcBoxSpn 
-{
-
-    $spnSecStr = ConvertTo-SecureString -String $env:spnClientSecret -AsPlainText -Force
-    $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $env:spnClientId, $spnSecStr
-
-    # Sign in to Az PowerShell with the SPN in process-scope only. Avoids clobbering the users existing login
-    Connect-AzAccount -TenantId $spnTenantId -Subscription $subscriptionId -Credential $spnCredObj -Scope Process -ServicePrincipal
-
-}
-<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Helper function. Returns the network prefix for a given IP and prefix length. Needed to calculate CIDR values 
+    elsewhere in the script. Makes getting the correct values into config.txt easier. Ex: 
+        Get-NetworkPrefix -ip 172.16.67.44 -prefix 16
+        returns 172.16.0.0
+#>
 function Get-NetworkPrefix {
     param (
         [IPAddress]$ip,
@@ -85,9 +97,14 @@ function Get-NetworkPrefix {
     return [IPAddress]($ip.Address -band $mask.Address)
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Set the script up to run to completetion. Disables SConfig, enables autologon for the current user, and sets
+    itself to run automatically every time PowerShell starts. If you need to start a PS session separately, use the
+    -noprofile switch
+#>
 function EnableAutorun 
 {
-    # Record start time
+    # Record start time so we can measure execution time
     Write-Host "ONENODESTART:" (Get-Date).Ticks
     # Disable SConfig for the duration of this script
     Set-SConfig -AutoLaunch $false
@@ -104,6 +121,10 @@ function EnableAutorun
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Download and install the minimum required modules to log into Azure. Once you perform the device login, the
+    script will run to completion without further user input.
+#>
 function AzBootstrap
 {
     Install-PackageProvider -Name "NuGet" -MinimumVersion 2.8.5.201 -ForceBootstrap -Force -Confirm:$false
@@ -115,9 +136,12 @@ function AzBootstrap
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Most Azure steps will use an SPN identity. This creates the SPN and stores the critical data for later use.
+#>
 function CreateArcBoxSpn
 {
-    # Authorize this system to run commands against Azure
+    # Interactive login, requires user input
     Connect-AzAccount `
         -Subscription $subscriptionId `
         -Scope "CurrentUser" `
@@ -143,9 +167,55 @@ function CreateArcBoxSpn
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Install any additional modules used by later stages of the script. Done inside a new PSSession so the correct
+    versions of NuGet and PSGet are used.
+#>
+function InstallAzModules
+{
+    $session = New-PSSession 
+    Invoke-Command -Session $session -ScriptBlock `
+    {
+        Install-Module -Name "Az.KubernetesConfiguration"
+        Install-Module -Name "Az.CustomLocation"
+        Install-Module -Name "Az.ConnectedKubernetes"
+        Install-Module -Name "Az.OperationalInsights"
+        Install-Module -Name "Az.StackHCI"
+        Install-Module -Name "AksHci" -Repository "PSGallery" -AcceptLicense -Confirm:$false -Force
+    }
+
+    Remove-PSSession -Session $session
+
+    Update-Progress
+}
+<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Some functions must be done with the Az CLI, so let's install that now.
+#>
+function InstallAzCli
+{
+    # Save to same directory as the script
+    $azCliUri = "https://aka.ms/installazurecliwindows"
+    $azCliPackage = "./azure-cli.msi"
+
+    # Use BITS to transfer file, for speed and reliability
+    Import-Module -Name 'BitsTransfer'
+    Start-BitsTransfer -Source $azCliUri -Destination $azCliPackage
+
+    # Run the installer non-interactively, but show progress. Feels nice to see progress, right? 
+    Start-Process msiexec.exe -Wait -ArgumentList '/I azure-cli.msi /passive'
+
+    # Make sure the CLI and AKSHCI locations are in the %PATH% because later commands depend on it
+    Set-Env -Name Path -Value "$env:Path;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\Program Files\AksHci"
+
+    Update-Progress
+}
+<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Assign required roles to the SPN. SPN info takes some time to propogate. This ensures time elapses.
+#>
 function AssignSpnRoles
 {
-    # Assign required roles
     New-AzRoleAssignment -ApplicationId $spnClientId -RoleDefinitionName "Security admin" 
     New-AzRoleAssignment -ApplicationId $spnClientId -RoleDefinitionName "Security reader"
     New-AzRoleAssignment -ApplicationId $spnClientId -RoleDefinitionName "Monitoring Metrics Publisher"
@@ -156,6 +226,9 @@ function AssignSpnRoles
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Ensure the correct Azure Resource Providers (RPs) are registered in this subscription 
+#>
 function RegisterHybridProviders
 {
     Register-AzResourceProvider -ProviderNamespace "Microsoft.Kubernetes"
@@ -168,6 +241,9 @@ function RegisterHybridProviders
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Create the Resource Group that will be used by almost everything in later stages of the script
+#>
 function CreateResourceGroup
 {
     New-AzResourceGroup `
@@ -178,16 +254,9 @@ function CreateResourceGroup
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
-function InstallAzModules
-{
-    Install-Module -Name "Az.KubernetesConfiguration"
-    Install-Module -Name "Az.CustomLocation"
-    Install-Module -Name "Az.ConnectedKubernetes"
-    Install-Module -Name "Az.OperationalInsights"
-
-    Update-Progress
-}
-<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Log Analytics workspace is used for monitoring and logs for multiple services
+#>
 function CreateAnalyticsWorkspace
 {
     $workspace = @{
@@ -203,26 +272,10 @@ function CreateAnalyticsWorkspace
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
-function InstallAzCli
-{
-    # Fetch Azure CLI for Arc operations
-    $azCliUri = "https://aka.ms/installazurecliwindows"
-    $azCliPackage = "./azure-cli.msi"
-    Import-Module -Name 'BitsTransfer'
-
-    Start-BitsTransfer -Source $azCliUri -Destination $azCliPackage
-
-    # Write-Warning "Azure CLI is installing in the background. This may take several minutes..."
-    Start-Process msiexec.exe -Wait -ArgumentList '/I azure-cli.msi /passive'
-
-    Set-Env -Name Path -Value "$env:Path;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\Program Files\AksHci"
-    az extension add --name arcdata
-    az extension add --name connectedk8s
-    az extension add --name k8s-extension
-
-    Update-Progress
-}
-<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Configure the Azure Stack HCI base OS itself. These steps need to be done ahead of registering and deploying
+    workloads, and will force a reboot at the end. Script will automatically resume.
+#>
 function ConfigureOS
 {
     # Build a list of required features that need to be installed and install them
@@ -243,19 +296,28 @@ function ConfigureOS
     # This allows Hyper-V to install correctly on nested virtualization systems
     Enable-WindowsOptionalFeature -FeatureName "Microsoft-Hyper-V" -Online -NoRestart
 
+    # Make sure the system trusts itself. Useful for some loopback remoting we'll be doing later
     Set-Item "WSMan:\localhost\Client\TrustedHosts" -Value '*' -Confirm:$false -Force
+    
+    # Self-explanatory, isn't it?
     Rename-Computer -NewName $nodeName
 
     Update-Progress
+
+    # System MUST restart before we continue. Execution will resume on boot.
     Restart-Computer -Force
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Do some dynamic calculation/detection of networks to we can build the VM switch on the right NIC, if there 
+    are multiples in a system.
+#>
 function CreateVmSwitch
 {
     # Get all IPv4 addresses on this system
     $ipList = Get-NetIPAddress -AddressFamily IPv4
 
-    # Iterate over all of them until you find the first one that's on the same network
+    # Iterate over all IPs until you find the first that's on the same network as $hciClusterIp from config.txt
     foreach ($ip in $ipList) 
     {
         $nicNetId = Get-NetworkPrefix -ip $ip.IPAddress -prefix $ip.PrefixLength
@@ -268,7 +330,8 @@ function CreateVmSwitch
 
             $global:aksCloudIpCidr = "$aksCloudAgentIp/" + $ip.PrefixLength
             Update-ScriptConfig -varName "aksCloudIpCidr" -varValue $aksCloudIpCidr
-
+            
+            # Build a simple 1-NIC switch and end the foreach loop
             New-VMSwitch `
                 -Name "HCI-Uplink" `
                 -EnableEmbeddedTeaming $true `
@@ -279,6 +342,7 @@ function CreateVmSwitch
         }
         else 
         {
+            # This is a fatal condition. Exit the script and figure out where things went wrong.
             Write-Warning "Could not find a network adapter on the same network as cluster network. Check your config file settings and try again"
             exit
         }
@@ -286,12 +350,16 @@ function CreateVmSwitch
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Specific hostnames get looked up dynamically during installation. Putting them in the local hosts file
+    removes the need for either automatic or manual DNS updates.
+#>
 function UpdateHostsFile 
 {
-
-    # Write out the hosts entries for the node and cluster
+    # Get the IP for the NIC bound to the VM switch
     $hciNodeIp = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "vEthernet (HCI-Uplink)").IPAddress
 
+    # Splatting parameters for easy re-use. Splatting is fun!
     $hostsParams =@{
         "Filepath" = "C:\Windows\System32\drivers\etc\hosts"
         "Encoding" = "utf8"
@@ -305,9 +373,11 @@ function UpdateHostsFile
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Create the cluster. Using DNS access point to remove the need for Active Directory.
+#>
 function CreateCluster
 {
-    # Create the cluster   
     New-Cluster `
         -Name $hciClusterName `
         -Node $nodeName `
@@ -317,10 +387,14 @@ function CreateCluster
 
     Update-Progress
 }
-
+<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Prepare and create the storage pool to be used for hosting workloads. In a production deployment there needs
+    to be multiple disks, but because this is a simple PoC, we can get away with just one data disk.
+#>
 function EnableS2D 
 {
-    # Clear out storage devices
+    # Clean out fixed storage devices to prepare for use. THIS IS DESTRUCTIVE.
     Update-StorageProviderCache
     Get-StoragePool | Where-Object IsPrimordial -eq $false | Set-StoragePool -IsReadOnly:$false 
     Get-StoragePool | Where-Object IsPrimordial -eq $false | Get-VirtualDisk | Remove-VirtualDisk -Confirm:$false
@@ -337,6 +411,7 @@ function EnableS2D
     # Enable S2D on the new cluster and create a volume
     Enable-ClusterS2D `
         -PoolFriendlyName "S2Dpool" `
+        -WarningAction 'SilentlyContinue' `
         -Confirm:$false
 
     # Set the storage pool redundancy for single-node
@@ -355,227 +430,288 @@ function EnableS2D
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    The registration code for Azure Stack HCI was never designed to run in this kind of non-domain environment.
+    In order to make it work as expected, we have to make a couple of changes to remove some dependencies.
+#>
 function ModifyAzStackHciModule
 {
-    # Install cur
-    Install-Module "Az.StackHCI" -Force
     $psm1File = (Get-ChildItem "C:\Program Files\WindowsPowerShell\Modules" -Filter "Az.StackHCI.psm1" -Recurse).FullName
 
+    # New-PSSession doesn't like this when there's no DNS suffix
     $replaceStr = [Regex]::Escape(' + "." + $ClusterDNSSuffix')
     (Get-Content -Path $psm1File -Raw) -replace $replaceStr,'' | Set-Content -Path $psm1File
 
+    # Temporary workaround to speed past an issue where we always timeout. Saving you 15 minutes!
     $replaceStr = [Regex]::Escape('$ClusterScheduledTaskWaitTimeMinutes = 15')
     (Get-Content -Path $psm1File -Raw) -replace $replaceStr,'$ClusterScheduledTaskWaitTimeMinutes = 0' | Set-Content -Path $psm1File
-    Import-Module -Name "Az.StackHCI"
 
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Register the Azure Stack HCI cluster with Azure. This allows you run workloads. It also starts the 60-day
+    trial period, after which you will be billed for this system. FYI.
+#>
 function RegisterHciCluster
 {
-    Connect-ArcBoxSpn
+    # Run these commands in a new PSSession. This removes potential module version conflict issues.
+    $session = New-PSSession -EnableNetworkAccess
+    Invoke-Command -Session $session -ScriptBlock `
+    {
+        #Connect to Azure inside this new session
+        $spnSecStr = ConvertTo-SecureString -String $using:spnClientSecret -AsPlainText -Force
+        $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $using:spnClientId, $spnSecStr
+        Connect-AzAccount -TenantId $using:spnTenantId -Subscription $using:subscriptionId -Credential $spnCredObj -Scope Process -ServicePrincipal
 
-    $armAccessToken = Get-AzAccessToken
-    $graphAccessToken = Get-AzAccessToken -ResourceTypeName 'AadGraph'
+        # Generate access tokens that let us run registration non-interactively
+        $armAccessToken = Get-AzAccessToken
+        $graphAccessToken = Get-AzAccessToken -ResourceTypeName 'AadGraph'
 
-    Register-AzStackHCI `
-        -SubscriptionId $subscriptionId `
-        -Region $azureLocation `
-        -ResourceName $hciClusterName `
-        -ResourceGroupName $resourceGroup `
-        -ArmAccessToken $armAccessToken.Token `
-        -GraphAccessToken $graphAccessToken.Token `
-        -AccountId $armAccessToken.UserId `
-        -ArcServerResourceGroupName $hciArcServersRg `
-        -EnableAzureArcServer:$true `
-        -Tag @{CreatedBy="OneNodeScript"}
-        
+        Register-AzStackHCI `
+            -SubscriptionId $using:subscriptionId `
+            -Region $using:azureLocation `
+            -ResourceName $using:hciClusterName `
+            -ResourceGroupName $using:resourceGroup `
+            -ArmAccessToken $armAccessToken.Token `
+            -GraphAccessToken $graphAccessToken.Token `
+            -AccountId $armAccessToken.UserId `
+            -ArcServerResourceGroupName $using:hciArcServersRg `
+            -EnableAzureArcServer:$true `
+            -Tag @{CreatedBy="OneNodeScript"}
+    }
+
+    # Cleanup
+    Remove-PSSession -Session $session
     Update-Progress
-
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Temporary workaround for an Arc Servers installation issue. This code will likely get removed from a future
+    update. Copied from the Az.StackHCI module.
+#>
 function RunArcAgentTaskManually
 {
-    try
+    $session = New-PSSession -EnableNetworkAccess
+    Invoke-Command -Session $session -ScriptBlock `
     {
-        # Params for Enable-AzureStackHCIArcIntegration 
-        $AgentInstaller_WebLink                  = 'https://aka.ms/AzureConnectedMachineAgent'
-        $AgentInstaller_Name                     = 'AzureConnectedMachineAgent.msi'
-        $AgentInstaller_LogFile                  = 'ConnectedMachineAgentInstallationLog.txt'
-        $AgentExecutable_Path                    =  $Env:Programfiles + '\AzureConnectedMachineAgent\azcmagent.exe'
+        $spnSecStr = ConvertTo-SecureString -String $using:spnClientSecret -AsPlainText -Force
+        $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $using:spnClientId, $spnSecStr
+        Connect-AzAccount -TenantId $using:spnTenantId -Subscription $using:subscriptionId -Credential $spnCredObj -Scope Process -ServicePrincipal
 
-        $DebugPreference = 'Continue'
-
-        # Setup Directory.
-        $LogFileDir = $env:windir + '\Tasks\ArcForServers'
-        if (-Not $(Test-Path $LogFileDir))
+        try
         {
-            New-Item -Type Directory -Path $LogFileDir
-        }
+            # Params for Enable-AzureStackHCIArcIntegration 
+            $AgentInstaller_WebLink                  = 'https://aka.ms/AzureConnectedMachineAgent'
+            $AgentInstaller_Name                     = 'AzureConnectedMachineAgent.msi'
+            $AgentInstaller_LogFile                  = 'ConnectedMachineAgentInstallationLog.txt'
+            $AgentExecutable_Path                    =  $Env:Programfiles + '\AzureConnectedMachineAgent\azcmagent.exe'
 
-        # Delete log files older than 15 days
-        Get-ChildItem -Path $LogFileDir -Recurse | Where-Object {($_.LastWriteTime -lt (Get-Date).AddDays(-15))} | Remove-Item
+            $DebugPreference = 'Continue'
 
-        # Setup Log file name.
-        $date = Get-Date
-        $datestring = '{0}{1:d2}{2:d2}' -f $date.year,$date.month,$date.day
-        $LogFileName = $LogFileDir + '\RegisterArc_' + $datestring + '.log'
-    
-        Start-Transcript -LiteralPath $LogFileName -Append | Out-Null
-        $sourceExists = [System.Diagnostics.EventLog]::SourceExists('HCI Registration')
-        if(-not $sourceExists)
-        {
-            New-EventLog -LogName Application -Source 'HCI Registration'
-        }
-        Write-Information 'Triggering Arc For Servers registration cmdlet'
-        $arcStatus = Get-AzureStackHCIArcIntegration
-
-        if ($arcStatus.ClusterArcStatus -eq 'Enabled')
-        {
-            $nodeStatus = $arcStatus.NodesArcStatus
-    
-            if ($nodeStatus.Keys -icontains ($env:computername))
+            # Setup Directory.
+            $LogFileDir = $env:windir + '\Tasks\ArcForServers'
+            if (-Not $(Test-Path $LogFileDir))
             {
-                if ($nodeStatus[$env:computername.ToLowerInvariant()] -ne 'Enabled')
+                New-Item -Type Directory -Path $LogFileDir
+            }
+
+            # Delete log files older than 15 days
+            Get-ChildItem -Path $LogFileDir -Recurse | Where-Object {($_.LastWriteTime -lt (Get-Date).AddDays(-15))} | Remove-Item
+
+            # Setup Log file name.
+            $date = Get-Date
+            $datestring = '{0}{1:d2}{2:d2}' -f $date.year,$date.month,$date.day
+            $LogFileName = $LogFileDir + '\RegisterArc_' + $datestring + '.log'
+        
+            Start-Transcript -LiteralPath $LogFileName -Append | Out-Null
+            $sourceExists = [System.Diagnostics.EventLog]::SourceExists('HCI Registration')
+            if(-not $sourceExists)
+            {
+                New-EventLog -LogName Application -Source 'HCI Registration'
+            }
+            Write-Information 'Triggering Arc For Servers registration cmdlet'
+            $arcStatus = Get-AzureStackHCIArcIntegration
+
+            if ($arcStatus.ClusterArcStatus -eq 'Enabled')
+            {
+                $nodeStatus = $arcStatus.NodesArcStatus
+        
+                if ($nodeStatus.Keys -icontains ($env:computername))
                 {
+                    if ($nodeStatus[$env:computername.ToLowerInvariant()] -ne 'Enabled')
+                    {
+                        Write-Information 'Registering Arc for servers.'
+                        Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9002 -EntryType 'Information' -Message 'Initiating Arc For Servers registration'
+                        Enable-AzureStackHCIArcIntegration -AgentInstallerWebLink $AgentInstaller_WebLink -AgentInstallerName $AgentInstaller_Name -AgentInstallerLogFile $AgentInstaller_LogFile -AgentExecutablePath $AgentExecutable_Path
+                        Sync-AzureStackHCI
+                        Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9003 -EntryType 'Information' -Message 'Completed Arc For Servers registration'
+                    }
+                    else
+                    {
+                        Write-Information 'Node is already registered.'
+                    }
+                }
+                else
+                {
+                    # New node added case.
                     Write-Information 'Registering Arc for servers.'
                     Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9002 -EntryType 'Information' -Message 'Initiating Arc For Servers registration'
                     Enable-AzureStackHCIArcIntegration -AgentInstallerWebLink $AgentInstaller_WebLink -AgentInstallerName $AgentInstaller_Name -AgentInstallerLogFile $AgentInstaller_LogFile -AgentExecutablePath $AgentExecutable_Path
                     Sync-AzureStackHCI
                     Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9003 -EntryType 'Information' -Message 'Completed Arc For Servers registration'
                 }
-                else
-                {
-                    Write-Information 'Node is already registered.'
-                }
             }
             else
             {
-                # New node added case.
-                Write-Information 'Registering Arc for servers.'
-                Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9002 -EntryType 'Information' -Message 'Initiating Arc For Servers registration'
-                Enable-AzureStackHCIArcIntegration -AgentInstallerWebLink $AgentInstaller_WebLink -AgentInstallerName $AgentInstaller_Name -AgentInstallerLogFile $AgentInstaller_LogFile -AgentExecutablePath $AgentExecutable_Path
-                Sync-AzureStackHCI
-                Write-EventLog -LogName Application -Source 'HCI Registration' -EventId 9003 -EntryType 'Information' -Message 'Completed Arc For Servers registration'
+                Write-Information ('Cluster Arc status is not enabled. ClusterArcStatus:' + $arcStatus.ClusterArcStatus.ToString())
             }
         }
-        else
+        catch
         {
-            Write-Information ('Cluster Arc status is not enabled. ClusterArcStatus:' + $arcStatus.ClusterArcStatus.ToString())
+            Write-Error -Exception $_.Exception -Category OperationStopped
+            # Get script line number, offset and Command that resulted in exception. Write-ErrorLog with the exception above does not write this info.
+            $positionMessage = $_.InvocationInfo.PositionMessage
+            Write-EventLog -LogName Application -Source "HCI Registration" -EventId 9116 -EntryType "Warning" -Message "Failed Arc For Servers registration: $positionMessage"
+            Write-Error ('Exception occurred in RegisterArcScript : ' + $positionMessage) -Category OperationStopped
+        }
+        finally
+        {
+            try{ Stop-Transcript } catch {}
         }
     }
-    catch
-    {
-        Write-Error -Exception $_.Exception -Category OperationStopped
-        # Get script line number, offset and Command that resulted in exception. Write-ErrorLog with the exception above does not write this info.
-        $positionMessage = $_.InvocationInfo.PositionMessage
-        Write-EventLog -LogName Application -Source "HCI Registration" -EventId 9116 -EntryType "Warning" -Message "Failed Arc For Servers registration: $positionMessage"
-        Write-Error ('Exception occurred in RegisterArcScript : ' + $positionMessage) -Category OperationStopped
-    }
-    finally
-    {
-        try{ Stop-Transcript } catch {}
-    }
-
+    Remove-PSSession -Session $session
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
-function AksHciPrep
+<#
+    Temporary workaround for a bug in the May 2022 KVA module. This will get removed in a future update.
+#>
+function ModifyKvaModule
 {
-    Install-Module -Name "AksHci" -Repository "PSGallery" -AcceptLicense -Confirm:$false -Force
+    $psm1File = (Get-ChildItem "C:\Program Files\WindowsPowerShell\Modules" -Filter "kva.psm1" -Recurse).FullName
 
-    Import-Module -Name 'AksHci'
-    Initialize-AksHciNode
+    $oldCode = '$tmpsecret = $tmp.Contexts.psobject.Members.Value[0].Account.ExtendedProperties.ServicePrincipalSecret'
+    $newCode = '
+    #################### BEGIN NEW CODE ####################
+    $tmpsecret = $null
+                
+    for ($i = 0; $i -lt ($tmp.Contexts.psobject.Members.Value).Count; $i++) 
+    {                    
+        if ($tmp.Contexts.psobject.Members.Value[$i].Account.Id -eq $azContext.Account.Id)
+        {
+            $tmpsecret = $tmp.Contexts.psobject.Members.Value[$i].Account.ExtendedProperties.ServicePrincipalSecret
+        }   
+    }
+    ####################  END NEW CODE  ####################'
+    
+    $findStr = [Regex]::Escape($oldCode)
+    
+    (Get-Content -Path $psm1File -Raw) -replace $findStr,$newCode | Set-Content -Path $psm1File
 
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Install AKSHCI and create a new workload cluster. The defaults here are scoped for a 64GB machine, 
+    but can be changed if you have more capacity. Might make these variables in the future.
+#>
 function InstallAksHci
 {
-    $dnsServer = (Get-DnsClientServerAddress -InterfaceAlias "vEthernet (HCI-Uplink)" -AddressFamily IPv4).ServerAddresses[0]
-    $defaultGw = (Get-NetRoute "0.0.0.0/0")[0].NextHop 
+    # New PSSession to avoid module conflicts
+    $session = New-PSSession -EnableNetworkAccess
+    Invoke-Command -Session $session -ScriptBlock `
+    {
+        $spnSecStr = ConvertTo-SecureString -String $using:spnClientSecret -AsPlainText -Force
+        $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $using:spnClientId, $spnSecStr
+        Connect-AzAccount -TenantId $using:spnTenantId -Subscription $using:subscriptionId -Credential $spnCredObj -Scope Process -ServicePrincipal
+
+        # Need all 3 modules loaded for later
+        Import-Module -Name 'AksHci'
+        Import-Module -Name 'Moc'
+        Import-Module -Name 'Kva'
+
+        Initialize-AksHciNode
+
+        # Dynamically discover existing settings. Saves you from having to manually enter data.
+        $dnsServer = (Get-DnsClientServerAddress -InterfaceAlias "vEthernet (HCI-Uplink)" -AddressFamily IPv4).ServerAddresses[0]
+        $defaultGw = (Get-NetRoute "0.0.0.0/0")[0].NextHop 
+        
+        $vNet = New-AksHciNetworkSetting `
+            -name arcboxvnet `
+            -vSwitchName "HCI-Uplink" `
+            -k8sNodeIpPoolStart $using:aksNodeIpPoolStart `
+            -k8sNodeIpPoolEnd $using:aksNodeIpPoolEnd `
+            -vipPoolStart $using:aksVipPoolStart `
+            -vipPoolEnd $using:aksVipPoolEnd `
+            -ipAddressPrefix $using:cidrNetworkId `
+            -gateway $defaultGw `
+            -dnsServers $dnsServer
+
+        Set-AksHciConfig `
+            -imageDir "C:\ClusterStorage\Volume01\Images" `
+            -workingDir "C:\ClusterStorage\Volume01\ImageStore" `
+            -cloudConfigLocation "C:\ClusterStorage\Volume01\Config" `
+            -clusterRoleName $using:akscloudAgentName `
+            -vnet $vNet `
+            -cloudservicecidr $using:aksCloudIpCidr
+        
+        # Change some internal settings so this configuration will work as expected without DNS
+        Set-MocConfigValue -Name "cloudFqdn" -Value $using:aksCloudAgentIp
+        Set-KvaConfig -kvaName 'arcbox-aks-control' -vnet $vNet
+
+        $armAccessToken = Get-AzAccessToken
+        $graphAccessToken = Get-AzAccessToken -ResourceTypeName 'AadGraph'
+
+        Set-AksHciRegistration `
+            -subscriptionId $using:subscriptionId `
+            -resourceGroupName $using:resourceGroup `
+            -Region $using:azureLocation `
+            -ArmAccessToken $armAccessToken.Token `
+            -GraphAccessToken $graphAccessToken.Token `
+            -AccountId $armAccessToken.UserId `
+            -TenantId $using:spnTenantId `
+            -Credential $spnCredObj
+
+        # Install the AKS HCI controller itself
+        Install-AksHci
+
+        # Create settings for workload cluster. No load balancer to save resources.
+        $lbConfig=New-AksHciLoadBalancerSetting -name "workloadLb" -loadBalancerSku "none"
     
-    $vNet = New-AksHciNetworkSetting `
-        -name arcboxvnet `
-        -vSwitchName "HCI-Uplink" `
-        -k8sNodeIpPoolStart $aksNodeIpPoolStart `
-        -k8sNodeIpPoolEnd $aksNodeIpPoolEnd `
-        -vipPoolStart $aksVipPoolStart `
-        -vipPoolEnd $aksVipPoolEnd `
-        -ipAddressPrefix $cidrNetworkId `
-        -gateway $defaultGw `
-        -dnsServers $dnsServer
-
-    Set-AksHciConfig `
-        -imageDir "C:\ClusterStorage\Volume01\Images" `
-        -workingDir "C:\ClusterStorage\Volume01\ImageStore" `
-        -cloudConfigLocation "C:\ClusterStorage\Volume01\Config" `
-        -clusterRoleName $akscloudAgentName `
-        -vnet $vNet `
-        -cloudservicecidr $aksCloudIpCidr
-
-    Import-Module -Name 'Moc'
-    Import-Module -Name 'Kva'
+        New-AksHciCluster `
+            -name $using:aksWorkloadCluster `
+            -controlPlaneVmSize 'Standard_K8S3_v1' `
+            -loadBalancerSettings $lbConfig `
+            -nodePoolName 'linuxnodepool' `
+            -nodeVmSize $using:aksWorkerNodeVmSize `
+            -nodeCount 4 `
+            -primaryNetworkPlugin 'flannel' `
+            -kubernetesVersion (Get-KvaConfig).kvaK8sVersion `
+            -enableMonitoring 
     
-    Set-MocConfigValue -Name "cloudFqdn" -Value $aksCloudAgentIp
-    Set-KvaConfig -kvaName 'arcbox-aks-control' -vnet $vNet
-
-    $spnPwd = ConvertTo-SecureString $env:spnClientSecret -AsPlainText -Force
-    $spnCredObj = New-Object System.Management.Automation.PSCredential ($env:spnClientId, $spnPwd)
-
-    Connect-ArcBoxSpn
-    $armAccessToken = Get-AzAccessToken
-    $graphAccessToken = Get-AzAccessToken -ResourceTypeName 'AadGraph'
-
-    Set-AksHciRegistration `
-        -subscriptionId $subscriptionId `
-        -resourceGroupName $resourceGroup `
-        -Region $azureLocation `
-        -ArmAccessToken $armAccessToken.Token `
-        -GraphAccessToken $graphAccessToken.Token `
-        -AccountId $armAccessToken.UserId `
-        -TenantId $spnTenantId `
-        -Credential $spnCredObj
-
-    Install-AksHci
+        # Get a kubeconfig file for the newly created cluster, so kubectl will work as expected
+        Get-AksHciCredential -Name $using:aksWorkloadCluster -Confirm:$false
     
+        # Arc connect the new workload cluster
+        Enable-AksHciArcConnection `
+            -subscriptionId $using:subscriptionId `
+            -resourceGroup $using:resourceGroup `
+            -name $using:aksWorkloadCluster `
+            -tenantId $using:spnTenantId `
+            -credential $spnCredObj `
+            -location $using:azureLocation
+    
+    }
+    Remove-PSSession -Session $session
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
-function CreateWorkloadCluster 
-{
-    $spnPwd = ConvertTo-SecureString $env:spnClientSecret -AsPlainText -Force
-    $spnCredObj = New-Object System.Management.Automation.PSCredential ($env:spnClientId, $spnPwd)
-
-    $lbConfig=New-AksHciLoadBalancerSetting -name "workloadLb" -loadBalancerSku "none"
-    
-    New-AksHciCluster `
-        -name $aksWorkloadCluster `
-        -controlPlaneVmSize 'Standard_K8S3_v1' `
-        -loadBalancerSettings $lbConfig `
-        -nodePoolName 'linuxnodepool' `
-        -nodeVmSize $aksWorkerNodeVmSize `
-        -nodeCount 4 `
-        -primaryNetworkPlugin 'flannel' `
-        -kubernetesVersion (Get-KvaConfig).kvaK8sVersion `
-        -enableMonitoring 
-
-    Get-AksHciCredential -Name $aksWorkloadCluster -Confirm:$false
-
-    Enable-AksHciArcConnection `
-        -subscriptionId $subscriptionId `
-        -resourceGroup $resourceGroup `
-        -name $aksWorkloadCluster `
-        -tenantId $spnTenantId `
-        -credential $spnCredObj `
-        -location $azureLocation
-
-    Update-Progress
-}
-<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Create a service bearer token so you can browse resources in the portal.
+#>
 function GenerateAksBearerToken
 {
-    # Create a service token so you can browse resources in the portal
     kubectl create serviceaccount admin-user
     kubectl create clusterrolebinding admin-user-binding --clusterrole cluster-admin --serviceaccount default:admin-user
     $secretName = (kubectl get serviceaccount admin-user -o jsonpath='{$.secrets[0].name}')
@@ -586,6 +722,9 @@ function GenerateAksBearerToken
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    We now need to enable some features on the Arc-connected workload cluster to enable later scenarios
+#>
 function EnableArcK8sFeatures
 {
     az login `
@@ -598,6 +737,8 @@ function EnableArcK8sFeatures
         Write-Error "Error logging into az cli."
         exit
     }
+
+    az extension add --name connectedk8s
 
     az connectedk8s enable-features `
         --name $aksWorkloadCluster `
@@ -614,8 +755,13 @@ function EnableArcK8sFeatures
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Install the Arc Data Services extension into the cluster
+#>
 function AddArcK8sExtensions
 {
+    az extension add --name k8s-extension
+
     az k8s-extension create `
         --cluster-name $aksWorkloadCluster `
         --resource-group $resourceGroup `
@@ -636,30 +782,46 @@ function AddArcK8sExtensions
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Now that the extension is installed, we can create a Custom Location (cl) in Azure to use as a deployment target
+#>
 function CreateArcCustomLocation
 {
-    $managedId = (Get-AzKubernetesExtension -clusterName $aksWorkloadCluster -ClusterType ConnectedClusters -ResourceGroupName $resourceGroup -Name 'arc-data-services').IdentityPrincipalId
-    $roleScope = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+    $session = New-PSSession -EnableNetworkAccess
+    Invoke-Command -Session $session -ScriptBlock `
+    {
+        $spnSecStr = ConvertTo-SecureString -String $using:spnClientSecret -AsPlainText -Force
+        $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $using:spnClientId, $spnSecStr
+        Connect-AzAccount -TenantId $using:spnTenantId -Subscription $using:subscriptionId -Credential $spnCredObj -Scope Process -ServicePrincipal
 
-    New-AzRoleAssignment -ObjectId $managedId -RoleDefinitionName "Contributor" -Scope $roleScope
-    New-AzRoleAssignment -ObjectId $managedId -RoleDefinitionName "Monitoring Metrics Publisher" -Scope $roleScope
+        $managedId = (Get-AzKubernetesExtension -clusterName $using:aksWorkloadCluster -ClusterType ConnectedClusters -ResourceGroupName $using:resourceGroup -Name 'arc-data-services').IdentityPrincipalId
+        $roleScope = "/subscriptions/$using:subscriptionId/resourceGroups/$using:resourceGroup"
 
-    $arcHostResourceId = (Get-AzConnectedKubernetes -clusterName $aksWorkloadCluster -ResourceGroupName $resourceGroup).Id
-    $arcClusterExtensionId = (Get-AzKubernetesExtension -clusterName $aksWorkloadCluster -ClusterType ConnectedClusters -ResourceGroupName $resourceGroup -Name 'arc-data-services').id
+        New-AzRoleAssignment -ObjectId $managedId -RoleDefinitionName "Contributor" -Scope $roleScope
+        New-AzRoleAssignment -ObjectId $managedId -RoleDefinitionName "Monitoring Metrics Publisher" -Scope $roleScope
 
-    New-AzCustomLocation `
-        -Name 'jumpstart-cl' `
-        -ResourceGroupName $resourceGroup `
-        -Namespace 'arc' `
-        -HostResourceId $arcHostResourceId `
-        -ClusterExtensionId $arcClusterExtensionId `
-        -Location $azureLocation
+        $arcHostResourceId = (Get-AzConnectedKubernetes -clusterName $using:aksWorkloadCluster -ResourceGroupName $using:resourceGroup).Id
+        $arcClusterExtensionId = (Get-AzKubernetesExtension -clusterName $using:aksWorkloadCluster -ClusterType ConnectedClusters -ResourceGroupName $using:resourceGroup -Name 'arc-data-services').id
 
+        New-AzCustomLocation `
+            -Name 'jumpstart-cl' `
+            -ResourceGroupName $using:resourceGroup `
+            -Namespace 'arc' `
+            -HostResourceId $arcHostResourceId `
+            -ClusterExtensionId $arcClusterExtensionId `
+            -Location $using:azureLocation
+    }
+    Remove-PSSession -Session $session
     Update-Progress
 }
-
+<#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Create the Arc data controller on our kube workload cluster.
+#>
 function CreateArcDataController
 {
+    az extension add --name arcdata
+
     az arcdata dc create `
         --name 'jumpstart-dc' `
         --resource-group $resourceGroup `
@@ -679,6 +841,9 @@ function CreateArcDataController
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>
+<#
+    Set things back to the way they were. Don't want the script auto-running any longer.
+#>
 function DisableAutorun
 {
     # Re-enable SConfig
@@ -725,6 +890,7 @@ try
 
     $currentStepName = 'Init'
     $currentStepIndex = 0
+
     do 
     {
         if ($progressLog[$currentStepIndex].Contains("Pending"))
