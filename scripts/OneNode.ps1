@@ -144,8 +144,9 @@ function CreateArcBoxSpn
     # Interactive login, requires user input
     Connect-AzAccount `
         -Subscription $subscriptionId `
+        -Tenant $tenantId `
         -Scope "CurrentUser" `
-        -UseDeviceAuthentication
+        -UseDeviceAuthentication `
 
     # Create new SPN
     $spnObj = New-AzADServicePrincipal `
@@ -210,6 +211,26 @@ function InstallAzCli
 
     Update-Progress
 }
+<#---------------------------------------------------------------------------------------------------------------#>
+function InstallWAC
+{
+    # Save to same directory as the script
+    $azCliUri = "https://aka.ms/wacdownload"
+    $azCliPackage = "./azure-cli.msi"
+
+    # Use BITS to transfer file, for speed and reliability
+    Import-Module -Name 'BitsTransfer'
+    Start-BitsTransfer -Source $azCliUri -Destination $azCliPackage
+
+    # Run the installer non-interactively, but show progress. Feels nice to see progress, right? 
+    Start-Process msiexec.exe -Wait -ArgumentList '/I azure-cli.msi /passive'
+
+    # Make sure the CLI and AKSHCI locations are in the %PATH% because later commands depend on it
+    Set-Env -Name Path -Value "$env:Path;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\Program Files\AksHci"
+
+    Update-Progress
+}
+
 <#---------------------------------------------------------------------------------------------------------------#>
 <#
     Assign required roles to the SPN. SPN info takes some time to propogate. This ensures time elapses.
@@ -315,38 +336,24 @@ function ConfigureOS
 function CreateVmSwitch
 {
     # Get all IPv4 addresses on this system
-    $ipList = Get-NetIPAddress -AddressFamily IPv4
+    $ip = Get-NetIPAddress -IPAddress $hciNodeIp
 
-    # Iterate over all IPs until you find the first that's on the same network as $hciClusterIp from config.txt
-    foreach ($ip in $ipList) 
-    {
-        $nicNetId = Get-NetworkPrefix -ip $ip.IPAddress -prefix $ip.PrefixLength
-        $cluNetId = Get-NetworkPrefix -ip $hciClusterIp -prefix $ip.PrefixLength
+    $nicNetId = Get-NetworkPrefix -ip $ip.IPAddress -prefix $ip.PrefixLength
 
-        if ($nicNetId -eq $cluNetId) 
-        {
-            $global:cidrNetworkId = "$nicNetId/" + $ip.PrefixLength
-            Update-ScriptConfig -varName "cidrNetworkId" -varValue $cidrNetworkId
+    $global:cidrNetworkId = "$nicNetId/" + $ip.PrefixLength
+    Update-ScriptConfig -varName "cidrNetworkId" -varValue $cidrNetworkId
 
-            $global:aksCloudIpCidr = "$aksCloudAgentIp/" + $ip.PrefixLength
-            Update-ScriptConfig -varName "aksCloudIpCidr" -varValue $aksCloudIpCidr
-            
-            # Build a simple 1-NIC switch and end the foreach loop
-            New-VMSwitch `
-                -Name "HCI-Uplink" `
-                -EnableEmbeddedTeaming $true `
-                -AllowManagementOS $true `
-                -MinimumBandwidthMode 'Weight' `
-                -NetAdapterName (Get-NetAdapter -InterfaceIndex $ip.ifIndex).Name
-            break 
-        }
-        else 
-        {
-            # This is a fatal condition. Exit the script and figure out where things went wrong.
-            Write-Warning "Could not find a network adapter on the same network as cluster network. Check your config file settings and try again"
-            exit
-        }
-    }           
+    $global:aksCloudIpCidr = "$aksCloudAgentIp/" + $ip.PrefixLength
+    Update-ScriptConfig -varName "aksCloudIpCidr" -varValue $aksCloudIpCidr
+        
+    # Build a simple 1-NIC switch and end the foreach loop
+    New-VMSwitch `
+        -Name "HCI-Uplink" `
+        -EnableEmbeddedTeaming $true `
+        -AllowManagementOS $true `
+        -MinimumBandwidthMode 'Weight' `
+        -NetAdapterName (Get-NetAdapter -InterfaceIndex $ip.ifIndex).Name
+        
     Update-Progress
 }
 <#---------------------------------------------------------------------------------------------------------------#>

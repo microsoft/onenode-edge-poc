@@ -9,18 +9,20 @@ deployLogicApp          =   false
 
 #-- Host variables --#
 adminUsername           =   Administrator
-adminPassword           =   Microsoft#1
+adminPassword           =   P@ssw0rd1
 nodeName                =   0neNode
 
 #-- Azure variables --#
 spnDisplayName          =   0neNodeSpn
 resourceGroup           =   0neNodeRg
-subscriptionId          =   03d13178-3e31-454d-9bdd-9e93bc53828a
+subscriptionId          =   ********-****-****-****-************
+tenantId                =   ********-****-****-****-************
 azureLocation           =   eastus
 workspaceName           =   0neNodeLogs
 
 #-- HCI variables --#
 hciClusterName          =   0neNodeClu
+hciNodeIp               =   172.16.0.9
 hciClusterIp            =   172.16.99.1
 hciArcServersRg         =   0neNodeArcRg
 
