@@ -1,7 +1,8 @@
-[CmdletBinding()] param (
-    [Parameter()]
-    [String]$ConfigFile='./config.txt'
-)
+
+$transcriptFile = 'C:\Temp\ExecutionTranscript.log'
+$configFile = 'C:\Temp\config.txt'
+$progressFile = 'C:\Temp\progress.log'
+
 <#---------------------------------------------------------------------------------------------------------------#>
 <# 
     Helper function. The re-startability of this script, and the ability to use data here in other Arc Jumpstart
@@ -24,11 +25,11 @@ function Set-Env
 #>
 Function Update-Progress 
 {
-    $progressLog[$currentStepIndex] = "$currentStepName = Completed"
-    $progressLog | Out-File -FilePath '.\progress.log' -Encoding utf8 -Force
+    $progress[$currentStepIndex] = "$currentStepName = Completed"
+    $progress | Out-File -FilePath $progressFile -Encoding utf8 -Force
     Write-Host "============================================" -ForegroundColor Yellow
-    Write-Host "Completed Step:"(($progressLog[$currentStepIndex]).Split())[0] -ForegroundColor DarkGreen
-    Write-Host "Next Step:"(($progressLog[$currentStepIndex+1]).Split())[0] -ForegroundColor DarkGreen
+    Write-Host "Completed Step:"(($progress[$currentStepIndex]).Split())[0] -ForegroundColor DarkGreen
+    Write-Host "Next Step:"(($progress[$currentStepIndex+1]).Split())[0] -ForegroundColor DarkGreen
 
 }
 <#---------------------------------------------------------------------------------------------------------------#>
@@ -45,7 +46,7 @@ function Update-ScriptConfig
     )
     Set-Env -Name $varName -Value $varValue
     $varFileOutput = "$varName = $varValue"
-    Out-File -FilePath $ConfigFile -Append -Encoding 'utf8' -InputObject $varFileOutput
+    Out-File -FilePath $configFile -Append -Encoding 'utf8' -InputObject $varFileOutput
 }
 <#---------------------------------------------------------------------------------------------------------------#>
 <#
@@ -58,7 +59,7 @@ function Initialize-Variables
     # Load our settings into variable from config.txt.  There is no parameter validation currently.
     try 
     {
-        $config = ConvertFrom-StringData (Get-Content -Raw $ConfigFile)
+        $config = ConvertFrom-StringData (Get-Content -Raw $configFile)
         foreach ($i in $config.Keys) 
         {
             New-Variable -Name $i -Value ($config.$i) -Force -Scope Global
@@ -67,7 +68,7 @@ function Initialize-Variables
     }
     catch 
     {
-        Write-Warning "Could not find or open $ConfigFile"
+        Write-Warning "Could not find or open $configFile"
         Write-Warning "Please verify the file exists in the location specified"
         exit
     }
@@ -104,6 +105,11 @@ function Get-NetworkPrefix {
 #>
 function EnableAutorun 
 {
+    if ($PSCommandPath -ne 'C:\Temp\OneNode.ps1')
+    {
+        Write-Warning "OneNode.ps1 must be run from C:\Temp`n`nPlease move all files to the C:\Temp directory and run again."
+        exit
+    }
     # Record start time so we can measure execution time
     Write-Host "ONENODESTART:" (Get-Date).Ticks
     # Disable SConfig for the duration of this script
@@ -407,11 +413,16 @@ function EnableS2D
     Get-StoragePool | Where-Object IsPrimordial -eq $false | Remove-StoragePool -Confirm:$false
     Get-PhysicalDisk | Reset-PhysicalDisk
     Get-Disk | Where-Object Number -ne $null | Where-Object IsBoot -ne $true | Where-Object IsSystem -ne $true | Where-Object PartitionStyle -ne RAW | ForEach-Object {
-        $_ | Set-Disk -isoffline:$false
-        $_ | Set-Disk -isreadonly:$false
-        $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
-        $_ | Set-Disk -isreadonly:$true
-        $_ | Set-Disk -isoffline:$true
+        $physDisk = Get-PhysicalDisk -SerialNumber $_.SerialNumber
+        if ($physDisk.BusType -ne "USB") 
+        {
+            $disk = Get-Disk -SerialNumber $physDisk.SerialNumber
+            $disk | Set-Disk -isoffline:$false
+            $disk | Set-Disk -isreadonly:$false
+            $disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+            $disk | Set-Disk -isreadonly:$true
+            $disk | Set-Disk -isoffline:$true
+        }
     }
     
     # Enable S2D on the new cluster and create a volume
@@ -442,7 +453,7 @@ function EnableS2D
 #>
 function ModifyAzStackHciModule
 {
-    $psm1File = (Get-ChildItem "C:\Program Files\WindowsPowerShell\Modules" -Filter "Az.StackHCI.psm1" -Recurse).FullName
+    $psm1File = (Get-ChildItem "C:\Program Files\WindowsPowerShell\Modules" -Filter "stackhci.ps1" -Recurse).FullName
 
     # New-PSSession doesn't like this when there's no DNS suffix
     $replaceStr = [Regex]::Escape(' + "." + $ClusterDNSSuffix')
@@ -723,7 +734,7 @@ function GenerateAksBearerToken
     $secretName = (kubectl get serviceaccount admin-user -o jsonpath='{$.secrets[0].name}')
     $secret = (kubectl get secret $secretName -o jsonpath='{$.data.token}')
     $token = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($secret))
-    $token | Out-File -FilePath '.\ArcServiceToken.txt' -Encoding utf8 -Force
+    $token | Out-File -FilePath 'C:\Temp\ArcServiceToken.txt' -Encoding utf8 -Force
 
     Update-Progress
 }
@@ -865,7 +876,7 @@ function DisableAutorun
     Remove-ItemProperty $RegistryPath 'DefaultUsername' -Force
     Remove-ItemProperty $RegistryPath 'DefaultPassword' -Force
 
-    $startLog = Select-String -Path $logfile -Pattern "ONENODESTART" -SimpleMatch
+    $startLog = Select-String -Path $transcriptFile -Pattern "ONENODESTART" -SimpleMatch
     $startTicks = [Int64](($startLog.Line).Split())[1]
     $startTime = [Datetime]$startTicks
     $runTime = ((Get-Date)-$startTime)
@@ -883,35 +894,32 @@ function DisableAutorun
 
 # Main execution begins here
 
-$orginalErrorAction = $ErrorActionPreference
 $ErrorActionPreference = "Inquire"
 
-$logFile = ('.\ExecutionTranscript.log')
-Start-Transcript -Path $logFile -Append
+Start-Transcript -Path $transcriptFile -Append
 
 try 
 {
     Initialize-Variables
-    $progressLog = Get-Content -Path '.\progress.log'
+    $progress = Get-Content -Path $progressFile
 
     $currentStepName = 'Init'
     $currentStepIndex = 0
 
     do 
     {
-        if ($progressLog[$currentStepIndex].Contains("Pending"))
+        if ($progress[$currentStepIndex].Contains("Pending"))
         {
-            $currentStepName = ($progressLog[$currentStepIndex].Split())[0]
+            $currentStepName = ($progress[$currentStepIndex].Split())[0]
             Invoke-Expression -Command $currentStepName
         }
         $currentStepIndex++
-        $progressLog = Get-Content -Path '.\progress.log' -Force
+        $progress = Get-Content -Path $progressFile -Force
     }
-    until ( $progressLog[$currentStepIndex] -eq "Done" )
+    until ( $progress[$currentStepIndex] -eq "Done" )
 
 }
 finally 
 {
     Stop-Transcript
-    $ErrorActionPreference = $orginalErrorAction
 }
