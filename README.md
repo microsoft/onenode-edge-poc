@@ -1,6 +1,13 @@
 # Project
 This project is meant to provide reference scripts for simple proof-of-concept deployment of a single-node Azure Stack HCI system with a full hybrid stack, with minimum external requirements.
 
+## Getting Started 
+Welcome to the Single Node azure Stack HCI Proof-of-Concept Deployment Script. To get started, please refer to the Readme(s) linked below. 
+|Release| Shortcut|
+--|--|
+NoDomain | [NoDomain-Readme](./OneNode-NoDomain-Readme/OneNode-NoDomain.md)|
+Domain| [Coming Soon]()|
+
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
