@@ -58,11 +58,11 @@ Note: Advanced settings within storage network configuration like iWarp or MTU c
 ### Step 0 Pre-Deployment Checklist ###
 Use the following check list to gather this information ahead of the actual deployment of your Azure Stack HCI cluster. This information will be used to configure the single node and also prepare the Configuration Deployment File, which is named Config.txt. 
 
-### Step 1 Install the Operating System ###
+### Step 1: Install the Operating System ###
 
 The first step in deploying Azure Stack HCI is to [download Azure Stack HCI](https://azure.microsoft.com/products/azure-stack/hci/hci-download/) and install the operating system on each server that you want to cluster. This article discusses different ways to deploy the operating system, and using Windows Admin Center to connect to the servers.
 
-## Determine hardware and network requirements
+#### Determine hardware and network requirements
 
 Microsoft recommends purchasing a validated Azure Stack HCI hardware/software solution from our partners. These solutions are designed, assembled, and validated against our reference architecture to ensure compatibility and reliability, so you get up and running quickly. Check that the systems, components, devices, and drivers you are using are certified for use with Azure Stack HCI. Visit the [Azure Stack HCI solutions](https://azure.microsoft.com/overview/azure-stack/hci) website for validated solutions.
 
@@ -76,7 +76,7 @@ Before you deploy the Azure Stack HCI operating system:
 
 For Azure Kubernetes Service on Azure Stack HCI and Windows Server requirements, see [AKS requirements on Azure Stack HCI](../../aks-hci/overview.md#what-you-need-to-get-started).
 
-## Gather information
+#### Gather information
 
 To prepare for deployment, you'll need to take note of the server names, domain names*, and versions, and VLAN ID for your deployment. Gather the following details about your environment:
 
@@ -88,7 +88,7 @@ To prepare for deployment, you'll need to take note of the server names, domain 
 > [!NOTE]
 >  This deployment script can operate in 2 Modes, Domain Required or No Domain Required. This is because of the nature of Single Node Azure Stack HCI, the technology will allow for a No Domain option. This is in now way a SUPPORTED operation mode for Azure Stack HCI and is NOT recomended for Production workloads. This is simply to support a quick development environment for testing Azure Stack HCI and it's features including Azure Kubernetes Solution on Azure Stack HCI, Ifrastructure as a Service, Azure Virtual Desktop on Azure Stack HCI (Currently in Preview) and more. Please use this deployment method only for Development and Concept Testing only.  
 
-## Prepare hardware for deployment
+#### Prepare hardware for deployment
 
 After you've acquired the server hardware for your Azure Stack HCI solution, it's time to rack and cable it. Use the following steps to prepare the server hardware for deployment of the operating system.
 
@@ -99,7 +99,7 @@ After you've acquired the server hardware for your Azure Stack HCI solution, it'
 > [!NOTE]
 > If you are installing Azure Stack HCI on to a Virtual Machine, please mount the ISO image to the Virtual Machine, and proceed to Boot to VHD (or VMDX, etc) and continue the installation process. 
 
-## Operating system deployment options
+#### Operating system deployment options
 
 You can deploy the Azure Stack HCI operating system in the same ways that you're used to deploying other Microsoft operating systems:
 
@@ -109,25 +109,25 @@ You can deploy the Azure Stack HCI operating system in the same ways that you're
 - Network deployment.
 - Manual deployment by connecting either a keyboard and monitor directly to the server hardware in your datacenter, or by connecting a KVM hardware device to the server hardware.
 
-### Headless deployment
+##### Headless deployment
 
 You can use an answer file to do a headless deployment of the operating system. The answer file uses an XML format to define configuration settings and values during an unattended installation of the operating system.
 
 For this deployment option, you can use Windows System Image Manager to create an unattend.xml answer file to deploy the operating system on your servers. Windows System Image Manager creates your unattend answer file through a graphical tool with component sections to define the "answers" to the configuration questions, and then ensure the correct format and syntax in the file.
 The Windows System Image Manager tool is available in the Windows Assessment and Deployment Kit (Windows ADK). To get started: [Download and install the Windows ADK](/windows-hardware/get-started/adk-install).
 
-### System Center Virtual Machine Manager (VMM) deployment
+##### System Center Virtual Machine Manager (VMM) deployment
 
 You can use [System Center 2022](/system-center/) to deploy the Azure Stack HCI, version 21H2 operating system on bare-metal hardware, as well as to cluster and manage the servers. For more information about using VMM to do a bare-metal deployment of the operating system, see [Provision a Hyper-V host or cluster from bare metal computers](/system-center/vmm/hyper-v-bare-metal).
 
 > [!IMPORTANT]
 > You can't use Microsoft System Center Virtual Machine Manager 2019 to deploy or manage clusters running Azure Stack HCI, version 21H2. If you're using VMM 2019 to manage your Azure Stack HCI, version 20H2 cluster, don't attempt to upgrade the cluster to version 21H2 without first installing [System Center 2022](/system-center/).
 
-### Network deployment
+##### Network deployment
 
 Another option is to install the Azure Stack HCI operating system over the network using [Windows Deployment Services](/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/hh831764(v=ws.11)).
 
-### Manual deployment
+##### Manual deployment
 
 To manually deploy the Azure Stack HCI operating system on the system drive of each server to be clustered, install the operating system via your preferred method, such as booting from a DVD or USB drive. Complete the installation process using the Server Configuration tool (Sconfig) to prepare the server or servers for clustering. To learn more about the tool, see [Configure a Server Core installation with Sconfig](/windows-server/windows-server-2022/get-started/sconfig-on-ws2022).
 
@@ -138,7 +138,7 @@ To manually install the Azure Stack HCI operating system:
 
 ![alt text](OneNode-NoDomain-Readme\Media\azure-stack-hci-install-language.png "The language page of the Install Azure Stack HCI wizard")
 
-  
+
 
 1. On the Applicable notices and license terms page, review the license terms, select the **I accept the license terms** checkbox, and then select **Next**.
 1. On the Which type of installation do you want? page, select **Custom: Install the newer version of Azure Stack HCI only (advanced)**.
@@ -182,6 +182,144 @@ From the Welcome to Azure Stack HCI window (Sconfig tool), you can perform the f
 
 For more detail, see [Server Configuration Tool (SConfig)](/windows-server/administration/server-core/server-core-sconfig).
 
-After configuring the operating system as ne
+After configuring the operating system as needed with Sconfig on each server, you're ready to use the Cluster Creation wizard in Windows Admin Center to cluster the servers.
+
+> [!NOTE]
+> If you're installing Azure Stack HCI on a single server, you must use PowerShell to create the cluster.
 
 
+
+
+### Step 2: Set up the deployment tool ###
+The Server will itself  act as a staging server (seed node)   during deployment of the cluster. In order to achieve this, you will need to copy over the OneNode Script and Config File to the staging server using whatever method you choose. 
+
+Note: If you use a USB drive or any Removable Media, please disconnect the drives before running the Script, as it could erase the contents of any non-operating system disks during the Storage Spaces Direct Installation stages. 
+
+
+Copy downloaded content from the GitHub Repop to any drive, recomended method is C:\temp or C:\Scripts
+Confirm the Config.txt is available and confirm the Values
+The deployment script requires the following parameters to be located in the Config.txt file:
+
+
+|Parameters|Description|
+|--|--|
+|Jumpstart Scenerios||
+|deployArcDataServices| Mark as True or False if you would like to deploy Azure Arc Data Services|
+|deploySQLMI|Mark as True or False if you would like to deploy Azure SQL Managed Instance|
+|deployPostgreSQL|Mark as True or False if you would like to deploy Azure PostgreSQL|
+|deployAppService|Mark as True or False if you would like to deploy Azure Arc Application Services|
+|deployFunction|Mark as True or False if you would like to deploy Azure Functions|
+|deployAPIMgmt|Mark as True or False if you would like to deploy Azure API Management Services|
+|deployLogicApp|Mark as True or False if you would like to deploy Azure Logic App Services|
+|||
+|Host Variables||
+|AdminUserName| Please provide the Server Local Administrator Username|
+|AdminPassword|Please provide the Server Local Administrator Password|
+|NodeName| Please Provide the desired Server Node Name |
+|||
+|Azure Variables||
+|spnDisplayName| Please Provide the Prefered Name for the Service Principal Account that will be created in your Azure Subscription|
+|ResourceGroup| Please Provide the Pre-Created Azure Resource Group Name|
+|SubscriptionID| Please Provide the Azure Subscription ID Number|
+|TenantID|Please Provide the Azure Active Directory Tenant ID Number|
+|AzureLocation| Please Provide the Prefered Azure Region|
+|WorkspaceName|Please Provide the Prefered Azure Log Analytics Workspace Name to be created.|
+|||
+|HCI Variables||
+|HCIClusterName|Please Provide the Desired HCI Cluster Name|
+|HCINodeIP|Please Provide the IP Address to be used as the Node IP Address, this can not be the same as the Cluster IP supplied below, but should be in the same VNet as that.|
+|HCIClusterIP|Please Provide the IP Address to be used as the Cluster IP Address, this can not be the same as the Node IP supplied above, but should be in the same VNet as that.|
+|HCIArcServerRG| Please Provide the Prefered name of the Azure Resource Group that will be created for the HCI Registration Azure Resource to be created in.|
+|||
+|AKS Variables||
+|AKSNodeIPPoolStart|You must specify a [Kubernetes node VM IP pool range](https://docs.microsoft.com/en-us/azure-stack/aks-hci/concepts-node-networking#kubernetes-node-vm-ip-pool).Please Provide the starting IP for this Range.|
+|AKSNodeIPPoolEnd|Please Provide the Ending IP Address for this Range|
+|AKSVIPPoolStart|A [Virtual IP (VIP) pool](https://docs.microsoft.com/en-us/azure-stack/aks-hci/concepts-node-networking#virtual-ip-pool) is set of IP addresses that are mandatory for any AKS on Azure Stack HCI. Please Provide the Starting IP Address for the VIP Pool|
+|AKSVIPPoolEnd|Please provide the ending IP Address for this range.|
+|AKSCloudAgentIP|A single instance of a highly available [cloud agent service](https://docs.microsoft.com/en-us/azure-stack/aks-hci/concepts-node-networking#microsoft-on-premises-cloud-service) deployed in the cluster. This agent runs on any one node in the Azure Stack HCI| Please provide the IP Address to be used for this service, it is advised that this be in the same vnet as the Node and Cluster IP Address.
+|AKSCloudAgentName|Please provide the Cloud Agent Name|
+|AKSWorkloadCluster|Please provide the name of the first workload cluster to be deployed|
+|AKSWorkerNodeVMSize|Please provide Worker Node VM Size, Default is Standard_K8S3_v1 for 1 worker node = 6GB|
+|||
+|Arc Data Services Variables||
+|ArcDSExtName||
+|ArcDSNameSpace||
+|AZData_Username||
+|AZData_Password||
+|Accept_EULA||
+
+### Step 3: Run the OneNode Script
+With the OneNode.PS1 and Config.txt file located on the node, and all PreRequisites completed, deployment can be started. In Powershell navigate to the directory that OneNode.ps1 was copied to. Run the following:
+
+```Powershell
+& .\OneNode.ps1
+```
+
+The Script will begin and run through all the steps neccesary to deploy your Single Node Azure Stack HCI Cluster without the need for Domain Membership. This process will include several restarts over the course of an couple of hours. After reboot the script will resume at next login, so be sure the monitor the progress. For your convience the Progress.log file has been created in the Script directory and will allow you to also track the sequential steps as they are happening. The Script is also Verbose so monitoring can be achieved in the PowerShell session. 
+
+### Step 4: Optional- Deploy Windows Admin Center ###
+
+#### Install Windows Admin Center
+
+Windows Admin Center is a locally deployed, browser-based app for managing Azure Stack HCI. The simplest way to [install Windows Admin Center](/windows-server/manage/windows-admin-center/deploy/install) is on a local management PC (desktop mode), although you can also install it on a server (service mode).
+
+If you install Windows Admin Center on a server, tasks that require CredSSP, such as cluster creation and installing updates and extensions, require using an account that's a member of the Gateway Administrators group on the Windows Admin Center server. For more information, see the first two sections of [Configure User Access Control and Permissions](/windows-server/manage/windows-admin-center/configure/user-access-control#gateway-access-role-definitions).
+
+### Step 5: Utilize the Services deployed ###
+#### Next Steps ####
+Now that the Cluster has been deployed, the services that were enabled and deployed can be utilized. This includes:
+
+|Service| Link to Get Started| 
+--|--|
+Azure Kubernetes Service|[Create a local Kubernetes cluster in the Azure Kubernetes Service host dashboard ](https://docs.microsoft.com/en-us/azure-stack/aks-hci/create-kubernetes-cluster#create-a-local-kubernetes-cluster-in-the-azure-kubernetes-service-host-dashboard)|
+Virtual Machines|[Manage Virtual Machines from Windows Admin Center](https://docs.microsoft.com/en-us/azure-stack/hci/manage/vm#create-a-new-vm)|
+Azure SQL MI|[Create Azure Arc-enabled SQL Managed Instance using Kubernetes tools](https://docs.microsoft.com/en-us/azure/azure-arc/data/create-sql-managed-instance-using-kubernetes-native-tools)|
+Azure PostgreSQL|[Create a PostgreSQL Hyperscale server group using Kubernetes tools](https://docs.microsoft.com/en-us/azure/azure-arc/data/create-postgresql-hyperscale-server-group-kubernetes-native-tools)|
+Azure Functions|[Set up an Azure Arc-enabled Kubernetes cluster to run App Service, Functions, and Logic Apps (Preview)](https://docs.microsoft.com/en-us/azure/app-service/manage-create-arc-environment?tabs=bash)|
+Azure API Management|[Getting Started with Azure Arc enabled API Management](https://docs.microsoft.com/en-us/azure/api-management/how-to-deploy-self-hosted-gateway-kubernetes)|
+
+You can begin Management of the Cluster in a number of ways:
+1. [Azure Portal](https://portal.azure.com)
+2. [Windows Admin Center](https://docs.microsoft.com/en-us/windows-server/manage/windows-admin-center/azure/manage-arc-hybrid-machines?toc=%2Fazure%2Fazure-arc%2Fservers%2Ftoc.json&bc=%2Fazure%2Fazure-arc%2Fservers%2Fbreadcrumb%2Ftoc.json)
+3. Powershell
+
+
+## Contributing
+
+This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
+the rights to use your contribution. For details, visit <https://cla.opensource.microsoft.com>.
+
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide
+a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
+provided by the bot. You will only need to do this once across all repos using our CLA.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Trademarks
+
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
+[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
+Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
+Any use of third-party trademarks or logos are subject to those third-party's policies.
+
+
+Contributions & Legal
+Contributing
+This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions provided by the bot. You will only need to do this once across all repos using our CLA.
+
+This project has adopted the Microsoft Open Source Code of Conduct. For more information see the Code of Conduct FAQ or contact opencode@microsoft.com with any additional questions or comments.
+
+Legal Notices
+Microsoft and any contributors grant you a license to the Microsoft documentation and other content in this repository under the Creative Commons Attribution 4.0 International Public License, see the LICENSE file, and grant you a license to any code in the repository under the MIT License, see the LICENSE-CODE file.
+
+Microsoft, Windows, Microsoft Azure and/or other Microsoft products and services referenced in the documentation may be either trademarks or registered trademarks of Microsoft in the United States and/or other countries. The licenses for this project do not grant you rights to use any Microsoft names, logos, or trademarks. Microsoft's general trademark guidelines can be found at http://go.microsoft.com/fwlink/?LinkID=254653.
+
+Privacy information can be found at https://privacy.microsoft.com/en-us/
+
+Microsoft and any contributors reserve all other rights, whether under their respective copyrights, patents, or trademarks, whether by implication, estoppel or otherwise.
