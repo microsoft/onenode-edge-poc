@@ -4,7 +4,8 @@ This guide describes how to deploy Azure Stack HCI, version 21H2 on a Single Nod
 
 The target audience for this guide is IT administrators familiar with the existing Azure Stack HCI solution or Developers who wish to have a small on premises environment.
 
-Important:  Please review the terms of use for the preview and sign up before you deploy this solution.
+**Important**  
+Please review the terms of use for the preview and sign up before you deploy this solution.
 
 ## Prerequisites ##
 Here you will find the software, hardware, and networking prerequisites to deploy Azure Stack HCI, version 21H2: 
@@ -12,7 +13,7 @@ Here you will find the software, hardware, and networking prerequisites to deplo
 ### Software requirements ###
 Before you begin, make sure that the following software requirement is met:
 
-|Component | |  
+|Component | Description |  
 --| --|
 |Operating System |You must install and set up the Azure Stack HCI, version 21H2 OS to boot using the instructions in this [link.](https://docs.microsoft.com/en-us/azure-stack/hci/deploy/operating-system)|  |
 
@@ -47,10 +48,12 @@ Note: Advanced settings within storage network configuration like iWarp or MTU c
 |Step # | Description|
 --| --|
 |Prerequisites|1. [Software Requirments]() 2.[Hardware requirments]() 3. [Network Requirments]() |
-|Step 0| |
-|Step 1||
-|Step 2||
-|Step 3||
+|Step 0| [Step 0](./OneNode-NoDomain.md/#step-0-pre-deployment-checklist) |
+|Step 1|[Step 1](./OneNode-NoDomain.md/#step-1-install-the-operating-system)|| 
+|Step 2|[Step 2](./OneNode-NoDomain.md/#step-2-set-up-the-deployment-tool)|
+|Step 3|[Step 3](./OneNode-NoDomain.md/#step-3-run-the-onenode-script)|
+|Step 3|[Step 4](./OneNode-NoDomain.md/#step-4-optional--deploy-windows-admin-center)|
+|Step 3|[Step 5](./OneNode-NoDomain.md/#step-5-utilize-the-services-deployed)|
 
 
 ## Step-by-step deployment ##
@@ -70,11 +73,10 @@ At minimum, you need one server, a reliable high-bandwidth, low-latency network 
 
 Before you deploy the Azure Stack HCI operating system:
 
-- Plan your [physical network requirements](../concepts/physical-network-requirements.md) and [host network requirements](../concepts/host-network-requirements.md).
-- If your deployment will stretch across multiple sites, determine how many servers you will need at each site, and whether the cluster configuration will be active/passive or active/active. For more information, see [Stretched clusters overview](../concepts/stretched-clusters.md).
-- Carefully [choose drives](../concepts/choose-drives.md) and [plan volumes](../concepts/plan-volumes.md) to meet your storage performance and capacity requirements.
+- Plan your [physical network requirements](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/azure-stack/hci/concepts/physical-network-requirements.md) and [host network requirements](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/azure-stack/hci/concepts/host-network-requirements.md).
+- Carefully [choose drives](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/azure-stack/hci/concepts/choose-drives.md) and [plan volumes](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/azure-stack/hci/concepts/plan-volumes.md) to meet your storage performance and capacity requirements.
 
-For Azure Kubernetes Service on Azure Stack HCI and Windows Server requirements, see [AKS requirements on Azure Stack HCI](../../aks-hci/overview.md#what-you-need-to-get-started).
+For Azure Kubernetes Service on Azure Stack HCI and Windows Server requirements, see [AKS requirements on Azure Stack HCI](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/azure-stack/aks-hci/overview.md#what-you-need-to-get-started).
 
 #### Gather information
 
@@ -85,9 +87,10 @@ To prepare for deployment, you'll need to take note of the server names, domain 
 - **Static IP addresses:** Azure Stack HCI requires static IP addresses for storage and workload (VM) traffic and doesn't support dynamic IP address assignment through DHCP for this high-speed network. You can use DHCP for the management network adapter unless you're using two in a team, in which case again you need to use static IPs. Consult your network administrator about the IP address you should use for each server in the cluster.
 - **VLAN ID:** Note the VLAN ID to be used for the network adapters on the servers, if any. You should be able to obtain this from your network administrator.
 
-> [!NOTE]
->  This deployment script can operate in 2 Modes, Domain Required or No Domain Required. This is because of the nature of Single Node Azure Stack HCI, the technology will allow for a No Domain option. This is in now way a SUPPORTED operation mode for Azure Stack HCI and is NOT recomended for Production workloads. This is simply to support a quick development environment for testing Azure Stack HCI and it's features including Azure Kubernetes Solution on Azure Stack HCI, Ifrastructure as a Service, Azure Virtual Desktop on Azure Stack HCI (Currently in Preview) and more. Please use this deployment method only for Development and Concept Testing only.  
 
+    **Important**    
+    This deployment script can operate in 2 Modes, Domain Required or No Domain Required. This is because of the nature of Single Node Azure Stack HCI, the technology will allow for a No Domain option. This is in now way a SUPPORTED operation mode for Azure Stack HCI and is NOT recomended for Production workloads. This is simply to support a quick development environment for testing Azure Stack HCI and it's features including Azure Kubernetes Solution on Azure Stack HCI, Ifrastructure as a Service, Azure Virtual Desktop on Azure Stack HCI (Currently in Preview) and more. Please use this deployment method only for Development and Concept Testing only.  
+---
 #### Prepare hardware for deployment
 
 After you've acquired the server hardware for your Azure Stack HCI solution, it's time to rack and cable it. Use the following steps to prepare the server hardware for deployment of the operating system.
@@ -96,8 +99,8 @@ After you've acquired the server hardware for your Azure Stack HCI solution, it'
 1. Connect the server nodes to your network switches.
 1. Configure the BIOS or the Unified Extensible Firmware Interface (UEFI) of your servers as recommended by your Azure Stack HCI hardware vendor to maximize performance and reliability.
 
-> [!NOTE]
-> If you are installing Azure Stack HCI on to a Virtual Machine, please mount the ISO image to the Virtual Machine, and proceed to Boot to VHD (or VMDX, etc) and continue the installation process. 
+> **Important**
+>If you are installing Azure Stack HCI on to a Virtual Machine, please mount the ISO image to the Virtual Machine, and proceed to Boot to VHD (or VMDX, etc) and continue the installation process. 
 
 #### Operating system deployment options
 
@@ -114,63 +117,61 @@ You can deploy the Azure Stack HCI operating system in the same ways that you're
 You can use an answer file to do a headless deployment of the operating system. The answer file uses an XML format to define configuration settings and values during an unattended installation of the operating system.
 
 For this deployment option, you can use Windows System Image Manager to create an unattend.xml answer file to deploy the operating system on your servers. Windows System Image Manager creates your unattend answer file through a graphical tool with component sections to define the "answers" to the configuration questions, and then ensure the correct format and syntax in the file.
-The Windows System Image Manager tool is available in the Windows Assessment and Deployment Kit (Windows ADK). To get started: [Download and install the Windows ADK](/windows-hardware/get-started/adk-install).
+The Windows System Image Manager tool is available in the Windows Assessment and Deployment Kit (Windows ADK). To get started: [Download and install the Windows ADK](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/windows-hardware/get-started/adk-install).
 
 ##### System Center Virtual Machine Manager (VMM) deployment
 
-You can use [System Center 2022](/system-center/) to deploy the Azure Stack HCI, version 21H2 operating system on bare-metal hardware, as well as to cluster and manage the servers. For more information about using VMM to do a bare-metal deployment of the operating system, see [Provision a Hyper-V host or cluster from bare metal computers](/system-center/vmm/hyper-v-bare-metal).
+You can use [System Center 2022](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/system-center) to deploy the Azure Stack HCI, version 21H2 operating system on bare-metal hardware, as well as to cluster and manage the servers. For more information about using VMM to do a bare-metal deployment of the operating system, see [Provision a Hyper-V host or cluster from bare metal computers](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/system-center/vmm/hyper-v-bare-metal).
 
-> [!IMPORTANT]
-> You can't use Microsoft System Center Virtual Machine Manager 2019 to deploy or manage clusters running Azure Stack HCI, version 21H2. If you're using VMM 2019 to manage your Azure Stack HCI, version 20H2 cluster, don't attempt to upgrade the cluster to version 21H2 without first installing [System Center 2022](/system-center/).
+> **IMPORTANT**
+> You can't use Microsoft System Center Virtual Machine Manager 2019 to deploy or manage clusters running Azure Stack HCI, version 21H2. If you're using VMM 2019 to manage your Azure Stack HCI, version 20H2 cluster, don't attempt to upgrade the cluster to version 21H2 without first installing [System Center 2022](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/system-center).
 
 ##### Network deployment
 
-Another option is to install the Azure Stack HCI operating system over the network using [Windows Deployment Services](/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/hh831764(v=ws.11)).
+Another option is to install the Azure Stack HCI operating system over the network using [Windows Deployment Services](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/hh831764(v=ws.11)).
 
 ##### Manual deployment
 
-To manually deploy the Azure Stack HCI operating system on the system drive of each server to be clustered, install the operating system via your preferred method, such as booting from a DVD or USB drive. Complete the installation process using the Server Configuration tool (Sconfig) to prepare the server or servers for clustering. To learn more about the tool, see [Configure a Server Core installation with Sconfig](/windows-server/windows-server-2022/get-started/sconfig-on-ws2022).
+To manually deploy the Azure Stack HCI operating system on the system drive of each server to be clustered, install the operating system via your preferred method, such as booting from a DVD or USB drive. Complete the installation process using the Server Configuration tool (Sconfig) to prepare the server or servers for clustering. To learn more about the tool, see [Configure a Server Core installation with Sconfig](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/windows-server/windows-server-2022/get-started/sconfig-on-ws2022).
 
 To manually install the Azure Stack HCI operating system:
 
 1. Start the Install Azure Stack HCI wizard on the system drive of the server where you want to install the operating system.
 1. Choose the language to install or accept the default language settings, select **Next**, and then on next page of the wizard, select **Install now**.
-
-![alt text](OneNode-NoDomain-Readme\Media\azure-stack-hci-install-language.png "The language page of the Install Azure Stack HCI wizard")
-
+![alt ext](./Media/azure-stack-hci-install-language.png "The language page of the Install Azure Stack HCI wizard")
 
 
 1. On the Applicable notices and license terms page, review the license terms, select the **I accept the license terms** checkbox, and then select **Next**.
 1. On the Which type of installation do you want? page, select **Custom: Install the newer version of Azure Stack HCI only (advanced)**.
 
-    > [!NOTE]
+    > **NOTE**
     > Upgrade installations are not supported in this release of the operating system.
-
-    :::image type="content" source="../media/operating-system/azure-stack-hci-install-which-type.png" alt-text="The installation type option page of the Install Azure Stack HCI wizard.":::
+![alt text](./Media/azure-stack-hci-install-which-type.png"The installation type option page of the Install Azure Stack HCI wizard.") 
 
 1. On the Where do you want to install Azure Stack HCI? page, either confirm the drive location where you want to install the operating system or update it, and then select **Next**.
 
-    :::image type="content" source="../media/operating-system/azure-stack-hci-install-where.png" alt-text="The drive location page of the Install Azure Stack HCI wizard.":::
+![alt text](./Media/azure-stack-hci-install-where.png "The drive location page of the Install Azure Stack HCI wizard.")
 
 1. The Installing Azure Stack HCI page displays to show status on the process.
 
-    :::image type="content" source="../media/operating-system/azure-stack-hci-installing.png" alt-text="The status page of the Install Azure Stack HCI wizard.":::
+    ![alt text](./Media/azure-stack-hci-installing.png "The status page of the Install Azure Stack HCI wizard.")
 
-    > [!NOTE]
+    > **NOTE**
     > The installation process restarts the operating system twice to complete the process, and displays notices on starting services before opening an Administrator command prompt.
 
 1. At the Administrator command prompt, select **Ok** to change the user's password before signing in to the operating system, and press Enter.
 
-    :::image type="content" source="../media/operating-system/azure-stack-hci-change-admin-password.png" alt-text="The change password prompt.":::
+    ![alt text](./Media/azure-stack-hci-change-admin-password.png "The change password prompt.")
+
 
 1. At the Enter new credential for Administrator prompt, enter a new password, enter it again to confirm it, and then press Enter.
 1. At the Your password has been changed confirmation prompt, press Enter.
 
-    :::image type="content" source="../media/operating-system/azure-stack-hci-admin-password-changed.png" alt-text="The changed password confirmation prompt":::
+    ![alt text](./Media/azure-stack-hci-admin-password-changed.png "The changed password confirmation prompt")
 
 Now you're ready to use the Server Configuration tool (Sconfig) to perform important tasks. To use Sconfig, log on to the server running the Azure Stack HCI operating system. This could be locally via a keyboard and monitor, or using a remote management (headless or BMC) controller, or Remote Desktop. The Sconfig tool opens automatically when you log on to the server.
 
-:::image type="content" source="../media/operating-system/azure-stack-hci-sconfig-screen.png" alt-text="The Server Configuration tool interface." lightbox="../media/operating-system/azure-stack-hci-sconfig-screen.png":::
+![alt text](./Media/azure-stack-hci-sconfig-screen.png )
 
 From the Welcome to Azure Stack HCI window (Sconfig tool), you can perform the following initial configuration tasks:
 
@@ -180,11 +181,11 @@ From the Welcome to Azure Stack HCI window (Sconfig tool), you can perform the f
 - Add your domain user account or designated domain group to local administrators.
 - Enable access to Windows Remote Management (WinRM) if you plan to manage the server from outside the local subnet and decided not to join domain yet. (The default Firewall rules allow management both from local subnet and from any subnet within your Active Directory domain services.)
 
-For more detail, see [Server Configuration Tool (SConfig)](/windows-server/administration/server-core/server-core-sconfig).
+For more detail, see [Server Configuration Tool (SConfig)](https://github.com/MicrosoftDocs/azure-stack-docs/blob/main/windows-server/administration/server-core/server-core-sconfig).
 
 After configuring the operating system as needed with Sconfig on each server, you're ready to use the Cluster Creation wizard in Windows Admin Center to cluster the servers.
 
-> [!NOTE]
+> **NOTE**
 > If you're installing Azure Stack HCI on a single server, you must use PowerShell to create the cluster.
 
 
@@ -242,11 +243,11 @@ The deployment script requires the following parameters to be located in the Con
 |AKSWorkerNodeVMSize|Please provide Worker Node VM Size, Default is Standard_K8S3_v1 for 1 worker node = 6GB|
 |||
 |Arc Data Services Variables||
-|ArcDSExtName||
-|ArcDSNameSpace||
-|AZData_Username||
-|AZData_Password||
-|Accept_EULA||
+|ArcDSExtName|Please provide name for [Arc Data Services Extension](https://docs.microsoft.com/en-us/azure/azure-arc/data/create-data-controller-direct-cli?tabs=windows) Name|
+|ArcDSNameSpace|Please provide name for Arc Data Services Namespace|
+|AZData_Username|Please provide Arc Data Service Username|
+|AZData_Password|Please provide Arc Data Service Password|
+|Accept_EULA|Please Accept Arc Data Services EULA|
 
 ### Step 3: Run the OneNode Script
 With the OneNode.PS1 and Config.txt file located on the node, and all PreRequisites completed, deployment can be started. In Powershell navigate to the directory that OneNode.ps1 was copied to. Run the following:
