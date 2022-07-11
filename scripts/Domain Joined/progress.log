@@ -1,0 +1,27 @@
+EnableAutorun = Pending
+AzBootstrap = Pending
+CreateArcBoxSpn = Pending
+InstallAzModules = Pending
+InstallAzCli = Pending
+InstallWAC = Pending
+AssignSpnRoles = Pending
+RegisterHybridProviders = Pending
+CreateResourceGroup = Pending
+CreateAnalyticsWorkspace = Pending
+ConfigureOS = Pending
+CreateVMSwitch = Pending
+UpdateHostsFile = Pending
+CreateCluster = Pending
+EnableS2D = Pending
+ModifyAzStackHciModule = Pending
+RegisterHciCluster = Pending
+RunArcAgentTaskManually = Pending
+ModifyKvaModule = Pending
+InstallAksHci = Pending
+GenerateAksBearerToken = Pending
+EnableArcK8sFeatures = Pending
+AddArcK8sExtensions = Pending
+CreateArcCustomLocation = Pending
+CreateArcDataController = Pending
+DisableAutorun = Pending
+Done
