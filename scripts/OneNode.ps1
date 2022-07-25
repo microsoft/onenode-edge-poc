@@ -465,6 +465,17 @@ function RegisterHciCluster
     $session = New-PSSession -EnableNetworkAccess
     Invoke-Command -Session $session -ScriptBlock `
     {
+        function Get-ClusterDNSSuffix{
+            $clusterNameResourceGUID = (Get-ItemProperty -Path HKLM:\Cluster -Name ClusterNameResource).ClusterNameResource 
+            $clusterDNSSuffix =  (Get-ClusterResource $clusterNameResourceGUID | Get-ClusterParameter DnsSuffix).Value 
+            return $clusterDNSSuffix
+          }
+
+        # Verify Cluster has DNS suffix set
+        Write-Verbose "Performing simple validation that DNS suffix exists for cluster"
+        $dnsSuffix = Get-ClusterDNSSuffix
+        if (!$dnsSuffix) { Write-Error "DNS suffix not set for cluster, registration cannot proceed without DNS suffix. Please fix this before continuing." }
+
         #Connect to Azure inside this new session
         $spnSecStr = ConvertTo-SecureString -String $using:spnClientSecret -AsPlainText -Force
         $spnCredObj = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $using:spnClientId, $spnSecStr
