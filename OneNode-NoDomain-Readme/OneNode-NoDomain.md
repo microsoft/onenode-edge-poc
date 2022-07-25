@@ -250,7 +250,7 @@ The deployment script requires the following parameters to be located in the Con
 |Accept_EULA|Please Accept Arc Data Services EULA|
 
 ### Step 3: Run the OneNode Script
-With the OneNode.PS1 and Config.txt file located on the node, and all PreRequisites completed, deployment can be started. In Powershell navigate to the directory that OneNode.ps1 was copied to. Run the following:
+With the OneNode.PS1, progress.log and Config.txt files located on the node, and all PreRequisites completed, deployment can be started. In Powershell navigate to the directory that OneNode.ps1 was copied to. Run the following:
 
 ```Powershell
 & .\OneNode.ps1
